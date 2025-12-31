@@ -9,7 +9,7 @@ interface HeaderProps {
 }
 
 function Header({
-    title = "Interactive Code Editor",
+    title = "CodeSplit",
     onFormat,
     onSettingsOpen,
     onDownload,

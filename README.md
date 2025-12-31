@@ -1,4 +1,4 @@
-# Interactive Code Editor
+# CodeSplit
 
 A professional, browser-based integrated development environment (IDE) built with React, TypeScript, and Vite. This application provides a robust coding experience for HTML, CSS, and JavaScript, featuring a Monaco Editor instance with advanced productivity tools and instant live preview capabilities.
 

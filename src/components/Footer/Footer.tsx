@@ -3,7 +3,7 @@ function Footer() {
         <footer className="flex-shrink-0 bg-slate-800 border-t border-slate-700 px-4 py-2 select-none">
             <div className="flex items-center justify-between text-xs text-slate-500">
                 <div className="flex items-center gap-2">
-                    <span>Interactive Code Editor</span>
+                    <span>CodeSplit</span>
                     <span className="text-slate-600">•</span>
                     <span>Built with React + Monaco</span>
                 </div>
