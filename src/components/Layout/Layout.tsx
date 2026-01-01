@@ -1,124 +1,99 @@
 import { useRef, useState, useCallback, useEffect } from "react";
+import { useParams, useLocation } from "react-router-dom";
 import Header from "../Header/Header";
 import MainContent from "../MainContent/MainContent";
 import Footer from "../Footer/Footer";
 import Dashboard from "../Dashboard/Dashboard";
 import type { MainContentRef } from "../MainContent/MainContent";
 import type { Project } from "../../services/projectService";
-import { saveProject } from "../../services/projectService";
+import { renameProject } from "../../services/projectService";
 import { useAuth } from "../../context/AuthContext";
 
-// LocalStorage keys used by the editor
-const LOCAL_STORAGE_FILES_KEY = "ice-files";
 
-// Default template to compare against
-const DEFAULT_HTML = `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Page</title>
-</head>
-<body>
-    <div class="card">
-        <h1>Hello, World! 👋</h1>
-        <p>Start editing to see your changes live!</p>
-        <button onclick="handleClick()">Click Me</button>
-    </div>
-</body>
-</html>`;
 
-interface LocalFileState {
-    id: string;
-    name: string;
-    language: string;
-    content: string;
+interface LayoutProps {
+    showDashboardOnMount?: boolean;
 }
 
-function Layout() {
+function Layout({ showDashboardOnMount = false }: LayoutProps) {
+    const { id: projectId } = useParams<{ id?: string }>();
+    const location = useLocation();
     const mainContentRef = useRef<MainContentRef>(null);
     const [isZenMode, setIsZenMode] = useState(false);
-    const [isSaving, setIsSaving] = useState(false);
-    const [showDashboard, setShowDashboard] = useState(false);
+    const [isSaving] = useState(false);
+    const [showDashboard, setShowDashboard] = useState(showDashboardOnMount);
     const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
     const [currentProjectTitle, setCurrentProjectTitle] = useState("Untitled Project");
-    const [hasClaimedWork, setHasClaimedWork] = useState(false);
+    const [projectLoaded, setProjectLoaded] = useState(false);
     const { user } = useAuth();
 
-    // Detect new login and check for local guest work to claim
+    // Load project from navigation state
     useEffect(() => {
-        // Only run when user just logged in and we haven't claimed yet
-        if (!user || hasClaimedWork) return;
+        if (!projectId) {
+            setCurrentProjectTitle("Untitled Project");
+            setProjectLoaded(true);
+            return;
+        }
 
-        const autoClaimLocalWork = async () => {
-            try {
-                const localData = localStorage.getItem(LOCAL_STORAGE_FILES_KEY);
-                if (!localData) {
-                    setHasClaimedWork(true);
-                    return;
-                }
+        // Get project from navigation state
+        const state = location.state as { project?: Project } | null;
+        const project = state?.project;
 
-                const localFiles: LocalFileState[] = JSON.parse(localData);
-                const htmlFile = localFiles.find(f => f.name === "index.html");
+        if (project) {
+            console.log("Loading project from state:", project.title);
+            setCurrentProjectId(project.id);
+            setCurrentProjectTitle(project.title || "Untitled Project");
+            setProjectLoaded(true);
+        } else {
+            // No state available (direct URL access)
+            console.log("No project state available");
+            setCurrentProjectTitle("Untitled Project");
+            setProjectLoaded(true);
+        }
+    }, [projectId, location.state]);
 
-                // Check if the local work is different from the default template
-                const hasCustomWork = htmlFile && htmlFile.content.trim() !== DEFAULT_HTML.trim();
+    // Load project content into editor once ref is ready
+    useEffect(() => {
+        const loadContent = () => {
+            if (!projectId || !mainContentRef.current || !projectLoaded) return;
 
-                if (hasCustomWork) {
-                    setIsSaving(true);
-                    console.log("Found guest work, auto-saving to cloud...");
+            // Get project from navigation state
+            const state = location.state as { project?: Project } | null;
+            const project = state?.project;
 
-                    const cssFile = localFiles.find(f => f.name === "styles.css");
-                    const jsFile = localFiles.find(f => f.name === "script.js");
-
-                    // Auto-save to Firestore (now Realtime DB)
-                    // We use a shorter timeout since this is background
-                    const savePromise = saveProject(user.uid, {
-                        title: "My Claimed Project",
-                        html: htmlFile?.content || "",
-                        css: cssFile?.content || "",
-                        js: jsFile?.content || "",
-                    });
-
-                    const savedId = await savePromise;
-
-                    // Clear localStorage after successful cloud save
-                    localStorage.removeItem(LOCAL_STORAGE_FILES_KEY);
-                    localStorage.removeItem("ice-cdn");
-                    localStorage.removeItem("ice-editor");
-
-                    setCurrentProjectId(savedId);
-                    setCurrentProjectTitle("My Claimed Project");
-
-                    // Optional: Show a small toast or log here instead of a modal
-                    console.log("Guest work successfully saved to cloud!");
-
-                    // If dashboard ends up being shown, we might not want to switch project immediately
-                    // But for now, loading it into current context is fine.
-                }
-
-                setHasClaimedWork(true);
-            } catch (error) {
-                console.error("Error auto-claiming local storage:", error);
-                // If error, we just mark as claimed so we don't loop, 
-                // but user keeps their local data for next try or manual save
-                setHasClaimedWork(true);
-            } finally {
-                setIsSaving(false);
+            if (project) {
+                console.log("Loading project content:", project.title);
+                mainContentRef.current.loadProject(project.html, project.css, project.js);
             }
         };
 
-        autoClaimLocalWork();
-    }, [user, hasClaimedWork]);
+        // Small delay to ensure ref is ready after mount
+        const timer = setTimeout(loadContent, 100);
+        return () => clearTimeout(timer);
+    }, [projectId, projectLoaded, location.state]);
+
+    // Handle title change - save to database
+    const handleTitleChange = useCallback(async (newTitle: string) => {
+        setCurrentProjectTitle(newTitle);
+
+        // Save to database if we have a project ID
+        if (currentProjectId && newTitle !== currentProjectTitle) {
+            try {
+                await renameProject(currentProjectId, newTitle);
+                console.log("Project title saved:", newTitle);
+            } catch (error) {
+                console.error("Error saving project title:", error);
+            }
+        }
+    }, [currentProjectId, currentProjectTitle]);
 
     const handleFormat = () => {
         mainContentRef.current?.formatCode();
     };
 
-    const handleSettingsOpen = () => {
+    const handleSettings = () => {
         mainContentRef.current?.openSettings();
     };
-
     const handleDownload = () => {
         mainContentRef.current?.downloadProject();
     };
@@ -135,32 +110,7 @@ function Layout() {
         setIsZenMode(!isZenMode);
     };
 
-    const handleSave = useCallback(async () => {
-        if (!user || !mainContentRef.current) return;
 
-        setIsSaving(true);
-        try {
-            const projectData = mainContentRef.current.getProjectData();
-            const savedId = await saveProject(user.uid, {
-                id: currentProjectId || undefined,
-                title: currentProjectTitle,
-                html: projectData.html,
-                css: projectData.css,
-                js: projectData.js,
-            });
-
-            if (!currentProjectId) {
-                setCurrentProjectId(savedId);
-            }
-
-            console.log("Project saved successfully:", savedId);
-        } catch (error) {
-            console.error("Failed to save project:", error);
-            alert("Failed to save project. Please try again.");
-        } finally {
-            setIsSaving(false);
-        }
-    }, [user, currentProjectId, currentProjectTitle]);
 
     const handleOpenProject = useCallback((project: Project) => {
         if (mainContentRef.current) {
@@ -207,9 +157,7 @@ h1 {
         setShowDashboard(false);
     }, []);
 
-    const handleDashboard = useCallback(() => {
-        setShowDashboard(true);
-    }, []);
+
 
     return (
         <div className="min-h-screen h-screen flex flex-col bg-slate-900 text-slate-100 overflow-hidden relative">
@@ -219,16 +167,14 @@ h1 {
                     }`}
             >
                 <Header
-                    onFormat={handleFormat}
-                    onSettingsOpen={handleSettingsOpen}
                     onDownload={handleDownload}
                     onExportHTML={handleExportHTML}
                     onShare={handleShare}
-                    onZenMode={toggleZenMode}
-                    isZenMode={isZenMode}
-                    onSave={handleSave}
                     isSaving={isSaving}
-                    onDashboard={user ? handleDashboard : undefined}
+                    isSaved={!isSaving}
+                    projectTitle={currentProjectTitle}
+                    onProjectTitleChange={handleTitleChange}
+                    isDashboardView={showDashboard}
                 />
             </div>
 
@@ -239,7 +185,7 @@ h1 {
 
             {/* Dashboard View - Overlay */}
             {showDashboard && user && (
-                <div className="absolute inset-0 top-[64px] z-50 bg-slate-900 overflow-y-auto settings-scrollbar animate-in fade-in duration-200">
+                <div className="absolute inset-0 top-[48px] z-50 bg-slate-900 overflow-y-auto settings-scrollbar animate-in fade-in duration-200">
                     <Dashboard
                         onOpenProject={handleOpenProject}
                         onCreateNew={handleCreateNew}
@@ -252,7 +198,12 @@ h1 {
                 className={`transition-all duration-300 ease-in-out ${isZenMode ? 'translate-y-full h-0 opacity-0' : 'translate-y-0 opacity-100'
                     }`}
             >
-                <Footer />
+                <Footer
+                    onZenMode={toggleZenMode}
+                    onFormat={handleFormat}
+                    onSettings={handleSettings}
+                    isZenMode={isZenMode}
+                />
             </div>
 
             {/* Floating Exit Zen Mode Button */}
