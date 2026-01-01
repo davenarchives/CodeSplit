@@ -129,6 +129,8 @@ export interface MainContentRef {
     downloadProject: () => void;
     exportHTML: () => void;
     shareCode: () => void;
+    getProjectData: () => { html: string; css: string; js: string };
+    loadProject: (html: string, css: string, js: string) => void;
 }
 
 interface MainContentProps {
@@ -510,6 +512,24 @@ const MainContent = forwardRef<MainContentRef, MainContentProps>(({ isZenMode = 
         downloadProject: handleDownload,
         exportHTML: handleExportHTML,
         shareCode: handleShare,
+        getProjectData: () => {
+            const htmlFile = files.find((f) => f.name === "index.html");
+            const cssFile = files.find((f) => f.name === "styles.css");
+            const jsFile = files.find((f) => f.name === "script.js");
+            return {
+                html: htmlFile?.content || "",
+                css: cssFile?.content || "",
+                js: jsFile?.content || "",
+            };
+        },
+        loadProject: (html: string, css: string, js: string) => {
+            setFiles([
+                { id: "index.html", name: "index.html", language: "html", content: html },
+                { id: "styles.css", name: "styles.css", language: "css", content: css },
+                { id: "script.js", name: "script.js", language: "javascript", content: js },
+            ]);
+            setActiveFileId("index.html");
+        },
     }));
 
     return (
