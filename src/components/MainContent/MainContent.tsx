@@ -119,6 +119,7 @@ const DEFAULT_CDN_SETTINGS: CdnSettings = {
 const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
     showMinimap: true,
     wordWrap: true,
+    theme: "vs-dark",
 };
 
 // Expose methods to parent via ref
@@ -402,8 +403,8 @@ const MainContent = forwardRef<MainContentRef, MainContentProps>(({ isZenMode = 
                 {/* Editor Panel */}
                 <div
                     className={`flex flex-col min-h-0 transition-all duration-300 ease-out ${isPreviewVisible
-                            ? 'border-r border-slate-700'
-                            : 'mx-auto border-x border-slate-700 rounded-lg overflow-hidden'
+                        ? 'border-r border-slate-700'
+                        : 'mx-auto border-x border-slate-700 rounded-lg overflow-hidden'
                         }`}
                     style={{
                         width: isPreviewVisible ? `${editorWidth}%` : '100%',
@@ -426,6 +427,7 @@ const MainContent = forwardRef<MainContentRef, MainContentProps>(({ isZenMode = 
                             onChange={handleCodeChange}
                             showMinimap={editorSettings.showMinimap}
                             wordWrap={editorSettings.wordWrap}
+                            theme={editorSettings.theme}
                             onSave={handleRefresh}
                         />
                     </div>
