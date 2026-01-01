@@ -1,4 +1,4 @@
-import { useImperativeHandle, forwardRef, useState, useMemo, useCallback, useEffect } from "react";
+import { useImperativeHandle, forwardRef, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import * as prettier from "prettier/standalone";
 import * as prettierHtml from "prettier/plugins/html";
 import * as prettierCss from "prettier/plugins/postcss";
@@ -148,6 +148,7 @@ const MainContent = forwardRef<MainContentRef, MainContentProps>(({ isZenMode = 
     const [toastMessage, setToastMessage] = useState("");
     const [showToast, setShowToast] = useState(false);
     const [isPreviewVisible, setIsPreviewVisible] = useState(true);
+    const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
     // Load from URL on mount
     useEffect(() => {
@@ -190,10 +191,11 @@ const MainContent = forwardRef<MainContentRef, MainContentProps>(({ isZenMode = 
             .join("\n");
     }, [cdnSettings]);
 
-    // Console interception script
+    // Console interception script with REPL support
     const consoleScript = `
     <script>
       (function() {
+        // Intercept console methods
         ['log', 'warn', 'error', 'info'].forEach(method => {
           const original = console[method];
           console[method] = function(...args) {
@@ -206,8 +208,34 @@ const MainContent = forwardRef<MainContentRef, MainContentProps>(({ isZenMode = 
             original.apply(console, args);
           };
         });
+        
+        // Handle runtime errors
         window.addEventListener('error', function(event) {
           console.error(event.message);
+        });
+        
+        // REPL: Listen for execute messages from parent
+        window.addEventListener('message', function(event) {
+          if (event.data && event.data.type === 'execute') {
+            try {
+              const result = eval(event.data.code);
+              window.parent.postMessage({
+                type: 'result',
+                result: result,
+                error: null,
+                id: event.data.id,
+                timestamp: Date.now()
+              }, '*');
+            } catch (err) {
+              window.parent.postMessage({
+                type: 'result',
+                result: null,
+                error: err.message || String(err),
+                id: event.data.id,
+                timestamp: Date.now()
+              }, '*');
+            }
+          }
         });
       })();
     </script>
@@ -238,7 +266,7 @@ const MainContent = forwardRef<MainContentRef, MainContentProps>(({ isZenMode = 
         return finalHtml;
     }, [debouncedFiles, cdnTags]);
 
-    // Handle postMessage from iframe
+    // Handle postMessage from iframe (console logs and REPL results)
     useEffect(() => {
         const handleMessage = (event: MessageEvent) => {
             if (event.data && event.data.type === "console") {
@@ -251,11 +279,69 @@ const MainContent = forwardRef<MainContentRef, MainContentProps>(({ isZenMode = 
                         timestamp: event.data.timestamp,
                     },
                 ]);
+            } else if (event.data && event.data.type === "result") {
+                // REPL result from iframe
+                if (event.data.error) {
+                    setLogs((prev) => [
+                        ...prev,
+                        {
+                            id: Math.random().toString(36).substr(2, 9),
+                            level: "error" as LogLevel,
+                            messages: [event.data.error],
+                            timestamp: event.data.timestamp,
+                        },
+                    ]);
+                } else {
+                    // Format the result for display
+                    const resultValue = event.data.result;
+                    const displayValue = resultValue === undefined
+                        ? "undefined"
+                        : resultValue === null
+                            ? "null"
+                            : typeof resultValue === "object"
+                                ? JSON.stringify(resultValue, null, 2)
+                                : String(resultValue);
+                    setLogs((prev) => [
+                        ...prev,
+                        {
+                            id: Math.random().toString(36).substr(2, 9),
+                            level: "result" as LogLevel,
+                            messages: [displayValue],
+                            timestamp: event.data.timestamp,
+                        },
+                    ]);
+                }
             }
         };
 
         window.addEventListener("message", handleMessage);
         return () => window.removeEventListener("message", handleMessage);
+    }, []);
+
+    // Execute code in iframe context (REPL)
+    const handleExecuteCode = useCallback((code: string) => {
+        // Add command to logs
+        setLogs((prev) => [
+            ...prev,
+            {
+                id: Math.random().toString(36).substr(2, 9),
+                level: "command" as LogLevel,
+                messages: [code],
+                timestamp: Date.now(),
+            },
+        ]);
+
+        // Send to iframe for execution
+        if (iframeRef.current?.contentWindow) {
+            iframeRef.current.contentWindow.postMessage(
+                {
+                    type: "execute",
+                    code: code,
+                    id: Math.random().toString(36).substr(2, 9),
+                },
+                "*"
+            );
+        }
     }, []);
 
     const handleCodeChange = useCallback(
@@ -450,6 +536,7 @@ const MainContent = forwardRef<MainContentRef, MainContentProps>(({ isZenMode = 
                             srcDoc={compiledDoc}
                             onRefresh={handleRefresh}
                             onToggleVisibility={() => setIsPreviewVisible(false)}
+                            iframeRef={iframeRef}
                         />
 
                         {/* Console - hidden in Zen Mode */}
@@ -459,6 +546,7 @@ const MainContent = forwardRef<MainContentRef, MainContentProps>(({ isZenMode = 
                                 onClear={handleClearLogs}
                                 isOpen={isConsoleOpen}
                                 onToggle={() => setIsConsoleOpen(!isConsoleOpen)}
+                                onExecute={handleExecuteCode}
                             />
                         )}
                     </div>
