@@ -127,6 +127,7 @@ export interface MainContentRef {
     formatCode: () => void;
     openSettings: () => void;
     downloadProject: () => void;
+    exportHTML: () => void;
     shareCode: () => void;
 }
 
@@ -452,6 +453,42 @@ const MainContent = forwardRef<MainContentRef, MainContentProps>(({ isZenMode = 
         });
     }, [files, cdnSettings]);
 
+    // Export as single HTML file with embedded CSS and JS
+    const handleExportHTML = useCallback(() => {
+        const htmlFile = files.find((f) => f.name === "index.html");
+        const cssFile = files.find((f) => f.name === "styles.css");
+        const jsFile = files.find((f) => f.name === "script.js");
+
+        if (!htmlFile) return;
+
+        // Generate CDN tags for enabled libraries
+        const cdnTagsForExport = CDN_LIBRARIES
+            .filter((lib) => cdnSettings[lib.id])
+            .flatMap((lib) => lib.tags)
+            .join("\n    ");
+
+        // Create standalone HTML with embedded CSS and JS
+        let standaloneHtml = htmlFile.content;
+
+        // Build the head injection with CDN tags and embedded CSS
+        const cssEmbed = cssFile ? `<style>\n${cssFile.content}\n    </style>` : "";
+        const headInjection = `${cdnTagsForExport ? cdnTagsForExport + "\n    " : ""}${cssEmbed}`;
+
+        if (headInjection) {
+            standaloneHtml = standaloneHtml.replace("</head>", `    ${headInjection}\n</head>`);
+        }
+
+        // Inject embedded JS before </body>
+        if (jsFile) {
+            const jsEmbed = `<script>\n${jsFile.content}\n    </script>`;
+            standaloneHtml = standaloneHtml.replace("</body>", `    ${jsEmbed}\n</body>`);
+        }
+
+        // Create blob and download
+        const blob = new Blob([standaloneHtml], { type: "text/html;charset=utf-8" });
+        saveAs(blob, "index.html");
+    }, [files, cdnSettings]);
+
     // Share code via URL
     const handleShare = useCallback(() => {
         const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(files));
@@ -471,6 +508,7 @@ const MainContent = forwardRef<MainContentRef, MainContentProps>(({ isZenMode = 
         formatCode: handleFormatCode,
         openSettings: () => setIsSettingsOpen(true),
         downloadProject: handleDownload,
+        exportHTML: handleExportHTML,
         shareCode: handleShare,
     }));
 
