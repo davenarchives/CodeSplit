@@ -1,14 +1,18 @@
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect, lazy, Suspense } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import Header from "../Header/Header";
-import MainContent from "../MainContent/MainContent";
 import Footer from "../Footer/Footer";
 import Dashboard from "../Dashboard/Dashboard";
 import PublishModal from "../PublishModal/PublishModal";
+import LoadingSpinner from "../LoadingSpinner/LoadingSpinner";
 import type { MainContentRef } from "../MainContent/MainContent";
 import type { Project } from "../../services/projectService";
 import { renameProject, getProjectById, saveProject } from "../../services/projectService";
 import { useAuth } from "../../context/AuthContext";
+
+// Lazy load MainContent to reduce initial bundle size
+// This separates Monaco Editor (~1.2MB) into a separate chunk
+const MainContent = lazy(() => import("../MainContent/MainContent"));
 
 
 
@@ -297,12 +301,15 @@ h1 {
 
             {/* Main Editor Content */}
             <div className={`flex-1 overflow-hidden relative flex flex-col ${showDashboard && user ? 'hidden' : 'flex'}`}>
-                <MainContent
-                    ref={mainContentRef}
-                    isZenMode={isZenMode}
-                    onCodeChange={currentProjectId && user ? handleCodeChange : undefined}
-                />
+                <Suspense fallback={<LoadingSpinner />}>
+                    <MainContent
+                        ref={mainContentRef}
+                        isZenMode={isZenMode}
+                        onCodeChange={currentProjectId && user ? handleCodeChange : undefined}
+                    />
+                </Suspense>
             </div>
+
 
             {/* Dashboard View - Overlay */}
             {showDashboard && user && (
