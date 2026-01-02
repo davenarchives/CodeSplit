@@ -3,9 +3,12 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useProfile } from "../hooks/useProfile";
 import { updateUserProfile, checkUsernameAvailability, claimUsername, validateUsername } from "../services/userService";
-import { Globe, Lock, Edit2, Save, X, Briefcase, ExternalLink, Settings2, Github, Linkedin, Link as LinkIcon, Pin, Check, AlertCircle, Loader2 } from "lucide-react";
+import { getUserPublishedProjects, type CommunityProject } from "../services/communityService";
+import { Globe, Lock, Edit2, Save, X, Briefcase, ExternalLink, Settings2, Github, Linkedin, Link as LinkIcon, Pin, Check, AlertCircle, Loader2, MessageSquare } from "lucide-react";
 import type { Project } from "../services/projectService";
 import ManageFeaturedModal from "../components/ManageFeaturedModal";
+import CommunityProjectCard from "../components/CommunityProjectCard/CommunityProjectCard";
+import EditPostModal from "../components/EditPostModal/EditPostModal";
 
 // Predefined gradient color pairs for project cards
 const GRADIENT_COLORS = [
@@ -140,6 +143,14 @@ function Profile() {
     const [isTogglingPrivacy, setIsTogglingPrivacy] = useState(false);
     const [showFeaturedModal, setShowFeaturedModal] = useState(false);
 
+    // Profile tabs
+    type ProfileTab = "featured" | "published";
+    const [activeTab, setActiveTab] = useState<ProfileTab>("featured");
+    const [publishedProjects, setPublishedProjects] = useState<CommunityProject[]>([]);
+    const [isLoadingPublished, setIsLoadingPublished] = useState(false);
+    const [editingProject, setEditingProject] = useState<CommunityProject | null>(null);
+    const [toastMessage, setToastMessage] = useState("");
+
     // Links editing state
     const [isEditingLinks, setIsEditingLinks] = useState(false);
     const [linksValue, setLinksValue] = useState({
@@ -171,6 +182,34 @@ function Profile() {
             setUsernameValue(profile.username);
         }
     }, [profile?.bio, profile?.links, profile?.username]);
+
+    // Fetch published projects when tab changes
+    useEffect(() => {
+        if (activeTab === "published" && profileUserId) {
+            fetchPublishedProjects();
+        }
+    }, [activeTab, profileUserId]);
+
+    const fetchPublishedProjects = async () => {
+        if (!profileUserId) return;
+        setIsLoadingPublished(true);
+        try {
+            const projects = await getUserPublishedProjects(profileUserId);
+            setPublishedProjects(projects);
+        } catch (error) {
+            console.error("Failed to fetch published projects:", error);
+        } finally {
+            setIsLoadingPublished(false);
+        }
+    };
+
+    // Auto-dismiss toast
+    useEffect(() => {
+        if (toastMessage) {
+            const timer = setTimeout(() => setToastMessage(""), 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [toastMessage]);
 
     // Debounced username availability check
     const checkUsername = useCallback(async (username: string) => {
@@ -718,60 +757,142 @@ function Profile() {
                         )}
                     </div>
 
-                    {/* Right Column - Featured Projects */}
+                    {/* Right Column - Projects */}
                     <div className="md:col-span-8">
-                        <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                                <Briefcase className="w-5 h-5 text-blue-400" />
-                                <h2 className="text-lg font-semibold text-white">Featured Work</h2>
-                            </div>
-                            {isOwnProfile && (
-                                <button
-                                    onClick={() => setShowFeaturedModal(true)}
-                                    className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-                                >
-                                    <Settings2 className="w-4 h-4" />
-                                    Manage
-                                </button>
-                            )}
+                        {/* Tabs */}
+                        <div className="flex items-center gap-1 mb-4 bg-slate-800/50 p-1 rounded-xl w-fit">
+                            <button
+                                onClick={() => setActiveTab("featured")}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === "featured"
+                                    ? "bg-slate-700 text-white shadow-lg"
+                                    : "text-slate-400 hover:text-white hover:bg-slate-700/50"
+                                    }`}
+                            >
+                                <Briefcase className="w-4 h-4" />
+                                Featured
+                            </button>
+                            <button
+                                onClick={() => setActiveTab("published")}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === "published"
+                                    ? "bg-slate-700 text-white shadow-lg"
+                                    : "text-slate-400 hover:text-white hover:bg-slate-700/50"
+                                    }`}
+                            >
+                                <MessageSquare className="w-4 h-4" />
+                                Published
+                            </button>
                         </div>
-
-                        {featuredProjects.length > 0 ? (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {featuredProjects.map((project) => (
-                                    <FeaturedProjectCard
-                                        key={project.id}
-                                        project={project}
-                                        onClick={() => handleOpenProject(project)}
-                                    />
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="border-2 border-dashed border-slate-700/50 rounded-xl p-12 text-center bg-slate-800/20">
-                                {/* Trophy illustration */}
-                                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-500/20 to-yellow-500/20 flex items-center justify-center mx-auto mb-5">
-                                    <svg className="w-10 h-10 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M7.73 9.728a6.726 6.726 0 002.748 1.35m8.272-6.842V4.5c0 2.108-.966 3.99-2.48 5.228m2.48-5.492a46.32 46.32 0 012.916.52 6.003 6.003 0 01-5.395 4.972m0 0a6.726 6.726 0 01-2.749 1.35m0 0a6.772 6.772 0 01-3.044 0" />
-                                    </svg>
+                        {/* Featured Tab Content */}
+                        {activeTab === "featured" && (
+                            <>
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <Briefcase className="w-5 h-5 text-blue-400" />
+                                        <h2 className="text-lg font-semibold text-white">Featured Work</h2>
+                                    </div>
+                                    {isOwnProfile && (
+                                        <button
+                                            onClick={() => setShowFeaturedModal(true)}
+                                            className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                                        >
+                                            <Settings2 className="w-4 h-4" />
+                                            Manage
+                                        </button>
+                                    )}
                                 </div>
-                                <h3 className="text-white font-semibold mb-2">
-                                    {isOwnProfile ? "Pin your favorites" : "No featured projects"}
-                                </h3>
-                                <p className="text-slate-400 text-sm max-w-xs mx-auto">
-                                    {isOwnProfile
-                                        ? "Pin your favorite projects here to show them to the world."
-                                        : "This user hasn't pinned any projects yet."}
-                                </p>
-                                {isOwnProfile && (
-                                    <button
-                                        onClick={() => setShowFeaturedModal(true)}
-                                        className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-                                    >
-                                        <Pin className="w-4 h-4" />
-                                        Pin Projects
-                                    </button>
+
+                                {featuredProjects.length > 0 ? (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        {featuredProjects.map((project) => (
+                                            <FeaturedProjectCard
+                                                key={project.id}
+                                                project={project}
+                                                onClick={() => handleOpenProject(project)}
+                                            />
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="border-2 border-dashed border-slate-700/50 rounded-xl p-12 text-center bg-slate-800/20">
+                                        {/* Trophy illustration */}
+                                        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-500/20 to-yellow-500/20 flex items-center justify-center mx-auto mb-5">
+                                            <svg className="w-10 h-10 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M7.73 9.728a6.726 6.726 0 002.748 1.35m8.272-6.842V4.5c0 2.108-.966 3.99-2.48 5.228m2.48-5.492a46.32 46.32 0 012.916.52 6.003 6.003 0 01-5.395 4.972m0 0a6.726 6.726 0 01-2.749 1.35m0 0a6.772 6.772 0 01-3.044 0" />
+                                            </svg>
+                                        </div>
+                                        <h3 className="text-white font-semibold mb-2">
+                                            {isOwnProfile ? "Pin your favorites" : "No featured projects"}
+                                        </h3>
+                                        <p className="text-slate-400 text-sm max-w-xs mx-auto">
+                                            {isOwnProfile
+                                                ? "Pin your favorite projects here to show them to the world."
+                                                : "This user hasn't pinned any projects yet."}
+                                        </p>
+                                        {isOwnProfile && (
+                                            <button
+                                                onClick={() => setShowFeaturedModal(true)}
+                                                className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                                            >
+                                                <Pin className="w-4 h-4" />
+                                                Pin Projects
+                                            </button>
+                                        )}
+                                    </div>
                                 )}
-                            </div>
+                            </>
+                        )}
+
+                        {/* Published Tab Content */}
+                        {activeTab === "published" && (
+                            <>
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <MessageSquare className="w-5 h-5 text-green-400" />
+                                        <h2 className="text-lg font-semibold text-white">Community Posts</h2>
+                                    </div>
+                                </div>
+
+                                {isLoadingPublished ? (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        {[...Array(4)].map((_, i) => (
+                                            <div key={i} className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden animate-pulse">
+                                                <div className="aspect-video bg-slate-700" />
+                                                <div className="p-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-6 h-6 rounded-full bg-slate-700" />
+                                                        <div className="h-4 bg-slate-700 rounded flex-1" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : publishedProjects.length > 0 ? (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        {publishedProjects.map((project) => (
+                                            <CommunityProjectCard
+                                                key={project.id}
+                                                project={project}
+                                                onClick={() => handleOpenProject(project)}
+                                                showEditButton={isOwnProfile}
+                                                onEdit={() => setEditingProject(project)}
+                                            />
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="border-2 border-dashed border-slate-700/50 rounded-xl p-12 text-center bg-slate-800/20">
+                                        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-green-500/20 to-emerald-500/20 flex items-center justify-center mx-auto mb-5">
+                                            <MessageSquare className="w-10 h-10 text-green-400" />
+                                        </div>
+                                        <h3 className="text-white font-semibold mb-2">
+                                            {isOwnProfile ? "No community posts yet" : "No published projects"}
+                                        </h3>
+                                        <p className="text-slate-400 text-sm max-w-xs mx-auto">
+                                            {isOwnProfile
+                                                ? "Publish your projects to share them with the community."
+                                                : "This user hasn't published any projects yet."}
+                                        </p>
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
                 </div>
@@ -785,6 +906,30 @@ function Profile() {
                     userId={profileUserId}
                     onUpdate={refetch}
                 />
+            )}
+
+            {/* Edit Post Modal */}
+            {editingProject && user && (
+                <EditPostModal
+                    isOpen={!!editingProject}
+                    onClose={() => setEditingProject(null)}
+                    project={editingProject}
+                    userId={user.uid}
+                    onSuccess={(msg) => {
+                        setToastMessage(msg);
+                        fetchPublishedProjects();
+                    }}
+                    onUnpublished={() => {
+                        fetchPublishedProjects();
+                    }}
+                />
+            )}
+
+            {/* Toast */}
+            {toastMessage && (
+                <div className="fixed bottom-4 right-4 z-50 px-4 py-3 bg-green-500/90 text-white rounded-lg shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    {toastMessage}
+                </div>
             )}
         </div>
     );
