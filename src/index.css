@@ -30,6 +30,16 @@
     scrollbar-color: rgba(99, 102, 241, 0.5) transparent;
 }
 
+/* Hidden scrollbar utility */
+.scrollbar-none::-webkit-scrollbar {
+    display: none;
+}
+
+.scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
 /* Custom Toggle Switch */
 .toggle-switch {
     position: relative;
