@@ -1,13 +1,30 @@
 import { useState } from "react";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Home, FolderOpen, Globe, Settings, ChevronLeft, ChevronRight, LogOut } from "lucide-react";
+import { Home, FolderOpen, Globe, Settings, ChevronLeft, ChevronRight, LogOut, User } from "lucide-react";
 
-const NAV_ITEMS = [
-    { to: "/dashboard", label: "Overview", icon: Home, end: true },
-    { to: "/dashboard/projects", label: "All Projects", icon: FolderOpen },
-    { to: "/dashboard/community", label: "Community", icon: Globe },
-    { to: "/dashboard/settings", label: "Settings", icon: Settings },
+// Grouped navigation structure
+const NAV_SECTIONS = [
+    {
+        label: "Workspace",
+        items: [
+            { to: "/dashboard", label: "Overview", icon: Home, end: true },
+            { to: "/dashboard/projects", label: "All Projects", icon: FolderOpen },
+        ]
+    },
+    {
+        label: "Explore",
+        items: [
+            { to: "/dashboard/community", label: "Community", icon: Globe },
+        ]
+    },
+    {
+        label: "Account",
+        items: [
+            { to: "/dashboard/profile", label: "Profile", icon: User },
+            { to: "/dashboard/settings", label: "Settings", icon: Settings },
+        ]
+    }
 ];
 
 function DashboardLayout() {
@@ -44,36 +61,55 @@ function DashboardLayout() {
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex-1 py-4 px-2 space-y-1">
-                    {NAV_ITEMS.map((item) => (
-                        <NavLink
-                            key={item.to}
-                            to={item.to}
-                            end={item.end}
-                            className={({ isActive }) =>
-                                `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group relative ${isActive
-                                    ? "bg-slate-700/50 text-white"
-                                    : "text-slate-400 hover:text-white hover:bg-slate-800"
-                                } ${isCollapsed ? "justify-center" : ""}`
-                            }
-                        >
-                            {({ isActive }) => (
-                                <>
-                                    {isActive && (
-                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-blue-500 rounded-r" />
-                                    )}
-                                    <item.icon className="w-5 h-5 flex-shrink-0" />
-                                    {!isCollapsed && (
-                                        <span className="text-sm font-medium">{item.label}</span>
-                                    )}
-                                    {isCollapsed && (
-                                        <div className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
-                                            {item.label}
-                                        </div>
-                                    )}
-                                </>
+                <nav className="flex-1 py-4 px-2 overflow-y-auto">
+                    {NAV_SECTIONS.map((section, sectionIndex) => (
+                        <div key={section.label} className={sectionIndex > 0 ? "mt-6" : ""}>
+                            {/* Section Label */}
+                            {!isCollapsed && (
+                                <div className="px-3 mb-2">
+                                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                        {section.label}
+                                    </span>
+                                </div>
                             )}
-                        </NavLink>
+                            {isCollapsed && sectionIndex > 0 && (
+                                <div className="mx-2 mb-2 border-t border-slate-700/50" />
+                            )}
+
+                            {/* Section Items */}
+                            <div className="space-y-1">
+                                {section.items.map((item) => (
+                                    <NavLink
+                                        key={item.to}
+                                        to={item.to}
+                                        end={item.end}
+                                        className={({ isActive }) =>
+                                            `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group relative ${isActive
+                                                ? "bg-slate-700/50 text-white"
+                                                : "text-slate-400 hover:text-white hover:bg-slate-800"
+                                            } ${isCollapsed ? "justify-center" : ""}`
+                                        }
+                                    >
+                                        {({ isActive }) => (
+                                            <>
+                                                {isActive && (
+                                                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-blue-500 rounded-r" />
+                                                )}
+                                                <item.icon className="w-5 h-5 flex-shrink-0" />
+                                                {!isCollapsed && (
+                                                    <span className="text-sm font-medium">{item.label}</span>
+                                                )}
+                                                {isCollapsed && (
+                                                    <div className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
+                                                        {item.label}
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </NavLink>
+                                ))}
+                            </div>
+                        </div>
                     ))}
                 </nav>
 
