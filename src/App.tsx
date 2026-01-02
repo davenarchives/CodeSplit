@@ -6,13 +6,16 @@ import Overview from "./pages/Overview";
 import Projects from "./pages/Projects";
 import Settings from "./pages/Settings";
 import Community from "./pages/Community";
+import Profile from "./pages/Profile";
+import PublicProfile from "./pages/PublicProfile";
 import ProtectedRoute from "./components/ProtectedRoute/ProtectedRoute";
 
 function App() {
   return (
     <Routes>
-      {/* Public Route */}
+      {/* Public Routes */}
       <Route path="/" element={<LandingPage />} />
+      <Route path="/u/:userId" element={<PublicProfile />} />
 
       {/* Dashboard with nested routes */}
       <Route
@@ -27,6 +30,8 @@ function App() {
         <Route path="projects" element={<Projects />} />
         <Route path="community" element={<Community />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="profile" element={<Profile />} />
+        <Route path="profile/:userId" element={<Profile />} />
       </Route>
 
       {/* Editor Route */}
@@ -43,3 +48,4 @@ function App() {
 }
 
 export default App;
+
