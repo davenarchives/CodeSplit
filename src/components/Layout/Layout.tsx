@@ -4,9 +4,10 @@ import Header from "../Header/Header";
 import MainContent from "../MainContent/MainContent";
 import Footer from "../Footer/Footer";
 import Dashboard from "../Dashboard/Dashboard";
+import PublishModal from "../PublishModal/PublishModal";
 import type { MainContentRef } from "../MainContent/MainContent";
 import type { Project } from "../../services/projectService";
-import { renameProject, getProjectById } from "../../services/projectService";
+import { renameProject, getProjectById, saveProject } from "../../services/projectService";
 import { useAuth } from "../../context/AuthContext";
 
 
@@ -20,14 +21,26 @@ function Layout({ showDashboardOnMount = false }: LayoutProps) {
     const location = useLocation();
     const mainContentRef = useRef<MainContentRef>(null);
     const [isZenMode, setIsZenMode] = useState(false);
-    const [isSaving] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
     const [showDashboard, setShowDashboard] = useState(showDashboardOnMount);
     const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
     const [currentProjectTitle, setCurrentProjectTitle] = useState("Untitled Project");
     const [projectLoaded, setProjectLoaded] = useState(false);
+    const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
+    const [currentHtml, setCurrentHtml] = useState("");
+    const [currentCss, setCurrentCss] = useState("");
     const { user } = useAuth();
 
+    // Publish modal state
+    const [publishMetadata, setPublishMetadata] = useState<{
+        isPublic: boolean;
+        description: string;
+        tags: string[];
+    }>({ isPublic: false, description: "", tags: [] });
+
     // Load project from navigation state or fetch from database
+    const [fetchedProject, setFetchedProject] = useState<Project | null>(null);
+
     useEffect(() => {
         const loadProject = async () => {
             if (!projectId) {
@@ -44,25 +57,18 @@ function Layout({ showDashboardOnMount = false }: LayoutProps) {
                 console.log("Loading project from state:", project.title);
                 setCurrentProjectId(project.id);
                 setCurrentProjectTitle(project.title || "Untitled Project");
+                setFetchedProject(project); // Store for loading into editor
                 setProjectLoaded(true);
             } else {
                 // No state available (direct URL access or forked template) - fetch from database
                 console.log("No project state, fetching from database...");
                 try {
-                    const fetchedProject = await getProjectById(projectId);
-                    if (fetchedProject) {
-                        console.log("Loaded project from database:", fetchedProject.title);
-                        setCurrentProjectId(fetchedProject.id);
-                        setCurrentProjectTitle(fetchedProject.title || "Untitled Project");
-
-                        // Also load the content into the editor
-                        if (mainContentRef.current) {
-                            mainContentRef.current.loadProject(
-                                fetchedProject.html,
-                                fetchedProject.css,
-                                fetchedProject.js
-                            );
-                        }
+                    const dbProject = await getProjectById(projectId);
+                    if (dbProject) {
+                        console.log("Loaded project from database:", dbProject.title);
+                        setCurrentProjectId(dbProject.id);
+                        setCurrentProjectTitle(dbProject.title || "Untitled Project");
+                        setFetchedProject(dbProject); // Store for loading into editor
                     } else {
                         console.log("Project not found in database");
                         setCurrentProjectTitle("Untitled Project");
@@ -78,25 +84,20 @@ function Layout({ showDashboardOnMount = false }: LayoutProps) {
         loadProject();
     }, [projectId, location.state]);
 
-    // Load project content into editor once ref is ready
+    // Load project content into editor once ref is ready and project is fetched
     useEffect(() => {
-        const loadContent = () => {
-            if (!projectId || !mainContentRef.current || !projectLoaded) return;
+        if (!fetchedProject || !mainContentRef.current || !projectLoaded) return;
 
-            // Get project from navigation state
-            const state = location.state as { project?: Project } | null;
-            const project = state?.project;
+        console.log("Loading project content into editor:", fetchedProject.title);
+        mainContentRef.current.loadProject(
+            fetchedProject.html,
+            fetchedProject.css,
+            fetchedProject.js
+        );
 
-            if (project) {
-                console.log("Loading project content:", project.title);
-                mainContentRef.current.loadProject(project.html, project.css, project.js);
-            }
-        };
-
-        // Small delay to ensure ref is ready after mount
-        const timer = setTimeout(loadContent, 100);
-        return () => clearTimeout(timer);
-    }, [projectId, projectLoaded, location.state]);
+        // Clear fetchedProject after loading to prevent re-triggering
+        setFetchedProject(null);
+    }, [fetchedProject, projectLoaded]);
 
     // Handle title change - save to database
     const handleTitleChange = useCallback(async (newTitle: string) => {
@@ -130,6 +131,43 @@ function Layout({ showDashboardOnMount = false }: LayoutProps) {
 
     const handleShare = () => {
         mainContentRef.current?.shareCode();
+    };
+
+    const handlePublish = async () => {
+        // Get current code from editor
+        if (mainContentRef.current && currentProjectId) {
+            const data = mainContentRef.current.getProjectData();
+            setCurrentHtml(data.html || "");
+            setCurrentCss(data.css || "");
+
+            // AUTO-SAVE: Save project content to database before opening publish modal
+            try {
+                await saveProject(user?.uid || "", {
+                    id: currentProjectId,
+                    title: currentProjectTitle,
+                    html: data.html,
+                    css: data.css,
+                    js: data.js
+                });
+                console.log("Auto-saved project before publish");
+
+                // Fetch latest project data to check if already public
+                const project = await getProjectById(currentProjectId);
+                if (project) {
+                    setPublishMetadata({
+                        isPublic: !!project.isPublic,
+                        description: project.description || "",
+                        tags: project.tags || []
+                    });
+                }
+            } catch (error) {
+                console.error("Failed to auto-save project:", error);
+                // Reset metadata on error
+                setPublishMetadata({ isPublic: false, description: "", tags: [] });
+            }
+        }
+        // Open modal after metadata is set
+        setIsPublishModalOpen(true);
     };
 
     const toggleZenMode = () => {
@@ -183,7 +221,58 @@ h1 {
         setShowDashboard(false);
     }, []);
 
+    // Handle code changes from editor - auto-save to database
+    const handleCodeChange = useCallback(async (data: { html: string; css: string; js: string }) => {
+        if (!currentProjectId || !user) return;
 
+        try {
+            await saveProject(user.uid, {
+                id: currentProjectId,
+                title: currentProjectTitle,
+                html: data.html,
+                css: data.css,
+                js: data.js
+            });
+            console.log("Auto-saved to database");
+        } catch (error) {
+            console.error("Auto-save failed:", error);
+        }
+    }, [currentProjectId, currentProjectTitle, user]);
+
+    // Handle manual save - saves to database immediately
+    const handleSave = useCallback(async () => {
+        if (!currentProjectId || !user || !mainContentRef.current) return;
+
+        setIsSaving(true);
+        try {
+            const data = mainContentRef.current.getProjectData();
+            await saveProject(user.uid, {
+                id: currentProjectId,
+                title: currentProjectTitle,
+                html: data.html,
+                css: data.css,
+                js: data.js
+            });
+            console.log("Manually saved to database");
+        } catch (error) {
+            console.error("Manual save failed:", error);
+        } finally {
+            setIsSaving(false);
+        }
+    }, [currentProjectId, currentProjectTitle, user]);
+
+    // Ctrl+S keyboard shortcut
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                handleSave();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [handleSave]);
 
     return (
         <div className="min-h-screen h-screen flex flex-col bg-slate-900 text-slate-100 overflow-hidden relative">
@@ -196,6 +285,8 @@ h1 {
                     onDownload={handleDownload}
                     onExportHTML={handleExportHTML}
                     onShare={handleShare}
+                    onPublish={handlePublish}
+                    onSave={currentProjectId && user ? handleSave : undefined}
                     isSaving={isSaving}
                     isSaved={!isSaving}
                     projectTitle={currentProjectTitle}
@@ -206,7 +297,11 @@ h1 {
 
             {/* Main Editor Content */}
             <div className={`flex-1 overflow-hidden relative flex flex-col ${showDashboard && user ? 'hidden' : 'flex'}`}>
-                <MainContent ref={mainContentRef} isZenMode={isZenMode} />
+                <MainContent
+                    ref={mainContentRef}
+                    isZenMode={isZenMode}
+                    onCodeChange={currentProjectId && user ? handleCodeChange : undefined}
+                />
             </div>
 
             {/* Dashboard View - Overlay */}
@@ -244,6 +339,24 @@ h1 {
                     </svg>
                     Exit Zen Mode
                 </button>
+            )}
+
+            {/* Publish Modal */}
+            {currentProjectId && user && (
+                <PublishModal
+                    isOpen={isPublishModalOpen}
+                    onClose={() => setIsPublishModalOpen(false)}
+                    projectId={currentProjectId}
+                    projectTitle={currentProjectTitle}
+                    projectHtml={currentHtml}
+                    projectCss={currentCss}
+                    userId={user.uid}
+                    onSuccess={() => setIsPublishModalOpen(false)}
+                    onTitleChange={setCurrentProjectTitle}
+                    isPublic={publishMetadata.isPublic}
+                    initialDescription={publishMetadata.description}
+                    initialTags={publishMetadata.tags}
+                />
             )}
         </div>
     );
