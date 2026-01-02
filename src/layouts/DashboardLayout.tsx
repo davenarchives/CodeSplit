@@ -61,7 +61,7 @@ function DashboardLayout() {
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex-1 py-4 px-2 overflow-y-auto">
+                <nav className={`flex-1 py-4 px-2 overflow-y-auto ${isCollapsed ? 'scrollbar-none' : 'settings-scrollbar'}`}>
                     {NAV_SECTIONS.map((section, sectionIndex) => (
                         <div key={section.label} className={sectionIndex > 0 ? "mt-6" : ""}>
                             {/* Section Label */}
