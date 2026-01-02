@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { getUserProjects, deleteProject, renameProject, duplicateProject } from "../services/projectService";
+import { getUserProjects, deleteProject, renameProject, duplicateProject, toggleProjectFeatured } from "../services/projectService";
 import type { Project } from "../services/projectService";
 
 type SortOption = "date-desc" | "date-asc" | "name";
@@ -130,14 +130,20 @@ function ProjectMenu({
     onRename,
     onDuplicate,
     onDelete,
-    isDeleting
+    onToggleFeatured,
+    isDeleting,
+    isFeatured,
+    isFeaturingLoading
 }: {
     isOpen: boolean;
     onClose: () => void;
     onRename: () => void;
     onDuplicate: () => void;
     onDelete: () => void;
+    onToggleFeatured: () => void;
     isDeleting: boolean;
+    isFeatured: boolean;
+    isFeaturingLoading: boolean;
 }) {
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -178,6 +184,26 @@ function ProjectMenu({
                 </svg>
                 Duplicate
             </button>
+            <button
+                onClick={(e) => { e.stopPropagation(); onToggleFeatured(); }}
+                disabled={isFeaturingLoading}
+                className={`w-full px-3 py-2 text-left text-sm transition-colors flex items-center gap-2 disabled:opacity-50 ${isFeatured
+                    ? "text-yellow-400 hover:bg-yellow-500/10 hover:text-yellow-300"
+                    : "text-slate-300 hover:bg-slate-700 hover:text-white"
+                    }`}
+            >
+                {isFeaturingLoading ? (
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                ) : (
+                    <svg className="w-4 h-4" fill={isFeatured ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                    </svg>
+                )}
+                {isFeatured ? "Remove from Profile" : "Feature on Profile"}
+            </button>
             <div className="border-t border-slate-700 my-1" />
             <button
                 onClick={(e) => { e.stopPropagation(); onDelete(); }}
@@ -208,6 +234,7 @@ function Projects() {
     const [error, setError] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+    const [featuringId, setFeaturingId] = useState<string | null>(null);
 
     // Search and Sort State
     const [searchQuery, setSearchQuery] = useState("");
@@ -343,6 +370,24 @@ function Projects() {
             alert("Failed to duplicate project.");
         } finally {
             setDuplicatingId(null);
+        }
+    };
+
+    const handleToggleFeatured = async (project: Project) => {
+        setFeaturingId(project.id);
+        setOpenMenuId(null);
+        try {
+            await toggleProjectFeatured(project.id, !project.isFeatured);
+            setProjects((prev) =>
+                prev.map((p) =>
+                    p.id === project.id ? { ...p, isFeatured: !p.isFeatured } : p
+                )
+            );
+        } catch (err) {
+            console.error("Error toggling featured:", err);
+            alert("Failed to update featured status.");
+        } finally {
+            setFeaturingId(null);
         }
     };
 
@@ -543,7 +588,10 @@ function Projects() {
                                         onRename={() => handleRenameClick(project)}
                                         onDuplicate={() => handleDuplicate(project)}
                                         onDelete={() => handleDelete(project.id)}
+                                        onToggleFeatured={() => handleToggleFeatured(project)}
                                         isDeleting={deletingId === project.id}
+                                        isFeatured={project.isFeatured ?? false}
+                                        isFeaturingLoading={featuringId === project.id}
                                     />
                                 </div>
                             </div>
