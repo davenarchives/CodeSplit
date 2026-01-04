@@ -42,11 +42,11 @@ export interface SaveProjectInput extends ProjectData {
 const PROJECTS_PATH = "projects";
 
 /**
- * Saves a project to Realtime Database.
- * If projectData has an ID, updates the existing node (preserving other fields).
- * If no ID is provided, pushes a new node.
+ * Saves a project to either LocalStorage or Firebase Realtime Database.
+ * If project.id starts with "local-", saves to localStorage.
+ * Otherwise, saves to Firebase.
  * 
- * @param userId - The ID of the user who owns the project
+ * @param userId - The ID of the user who owns the project (ignored for local projects)
  * @param projectData - The project data to save
  * @returns The ID of the saved project
  */
@@ -56,6 +56,23 @@ export const saveProject = async (
 ): Promise<string> => {
     const { id, title, html, css, js } = projectData;
 
+    // Check if this is a local project
+    if (id && id.startsWith("local-")) {
+        // Save to localStorage
+        const project: Project = {
+            id,
+            title,
+            html,
+            css,
+            js,
+            ownerId: "local",
+            updatedAt: Date.now()
+        };
+        localStorage.setItem(`project-${id}`, JSON.stringify(project));
+        return id;
+    }
+
+    // Cloud storage logic
     if (id) {
         // Update existing project - use update() to preserve other fields (isPublic, tags, likes, etc.)
         const projectRef = ref(database, `${PROJECTS_PATH}/${id}`);
@@ -84,50 +101,89 @@ export const saveProject = async (
 };
 
 /**
- * Retrieves all projects for a specific user.
+ * Retrieves all projects for a specific user from both localStorage and Firebase.
  * 
- * @param userId - The ID of the user whose projects to fetch
- * @returns An array of projects owned by the user
+ * @param userId - The ID of the user whose projects to fetch (ignored for local projects)
+ * @returns A combined array of local and cloud projects owned by the user
  */
 export const getUserProjects = async (userId: string): Promise<Project[]> => {
-    const projectsRef = ref(database, PROJECTS_PATH);
-    const q = query(
-        projectsRef,
-        orderByChild("ownerId"),
-        equalTo(userId)
-    );
+    const cloudProjects: Project[] = [];
+    const localProjects: Project[] = [];
 
-    const snapshot = await get(q);
-    const projects: Project[] = [];
+    // Fetch cloud projects from Firebase
+    if (userId) {
+        const projectsRef = ref(database, PROJECTS_PATH);
+        const q = query(
+            projectsRef,
+            orderByChild("ownerId"),
+            equalTo(userId)
+        );
 
-    if (snapshot.exists()) {
-        snapshot.forEach((childSnapshot) => {
-            const data = childSnapshot.val();
-            projects.push({
-                id: childSnapshot.key!,
-                title: data.title,
-                html: data.html,
-                css: data.css,
-                js: data.js,
-                ownerId: data.ownerId,
-                updatedAt: data.updatedAt,
-                isPublic: data.isPublic ?? false,
-                isFeatured: data.isFeatured ?? false
+        const snapshot = await get(q);
+
+        if (snapshot.exists()) {
+            snapshot.forEach((childSnapshot) => {
+                const data = childSnapshot.val();
+                cloudProjects.push({
+                    id: childSnapshot.key!,
+                    title: data.title,
+                    html: data.html,
+                    css: data.css,
+                    js: data.js,
+                    ownerId: data.ownerId,
+                    updatedAt: data.updatedAt,
+                    isPublic: data.isPublic ?? false,
+                    isFeatured: data.isFeatured ?? false
+                });
             });
-        });
+        }
     }
 
-    // Sort by updatedAt descending (client-side sorting since RTDB sorting is limited)
-    return projects.sort((a, b) => b.updatedAt - a.updatedAt);
+    // Fetch local projects from localStorage
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("project-local-")) {
+            try {
+                const projectData = localStorage.getItem(key);
+                if (projectData) {
+                    const project: Project = JSON.parse(projectData);
+                    localProjects.push(project);
+                }
+            } catch (error) {
+                console.error(`Error parsing local project ${key}:`, error);
+            }
+        }
+    }
+
+    // Combine and sort by updatedAt descending
+    const allProjects = [...cloudProjects, ...localProjects];
+    return allProjects.sort((a, b) => b.updatedAt - a.updatedAt);
 };
 
 /**
- * Retrieves a single project by ID.
+ * Retrieves a single project by ID from either localStorage or Firebase.
+ * If ID starts with "local-", fetches from localStorage.
+ * Otherwise, fetches from Firebase.
  * 
  * @param projectId - The ID of the project to fetch
  * @returns The project data or null if not found
  */
 export const getProjectById = async (projectId: string): Promise<Project | null> => {
+    // Check if this is a local project
+    if (projectId.startsWith("local-")) {
+        // Fetch from localStorage
+        try {
+            const projectData = localStorage.getItem(`project-${projectId}`);
+            if (projectData) {
+                return JSON.parse(projectData);
+            }
+        } catch (error) {
+            console.error(`Error parsing local project ${projectId}:`, error);
+        }
+        return null;
+    }
+
+    // Fetch from Firebase
     const projectRef = ref(database, `${PROJECTS_PATH}/${projectId}`);
     const snapshot = await get(projectRef);
 
@@ -152,11 +208,18 @@ export const getProjectById = async (projectId: string): Promise<Project | null>
 };
 
 /**
- * Deletes a project from Realtime Database.
+ * Deletes a project from either localStorage or Firebase Realtime Database.
  * 
  * @param projectId - The ID of the project to delete
  */
 export const deleteProject = async (projectId: string): Promise<void> => {
+    // Check if this is a local project
+    if (projectId.startsWith("local-")) {
+        localStorage.removeItem(`project-${projectId}`);
+        return;
+    }
+
+    // Delete from Firebase
     const projectRef = ref(database, `${PROJECTS_PATH}/${projectId}`);
     await remove(projectRef);
 };
@@ -168,6 +231,19 @@ export const deleteProject = async (projectId: string): Promise<void> => {
  * @param newTitle - The new title for the project
  */
 export const renameProject = async (projectId: string, newTitle: string): Promise<void> => {
+    // Check if this is a local project
+    if (projectId.startsWith("local-")) {
+        const projectData = localStorage.getItem(`project-${projectId}`);
+        if (projectData) {
+            const project = JSON.parse(projectData);
+            project.title = newTitle;
+            project.updatedAt = Date.now();
+            localStorage.setItem(`project-${projectId}`, JSON.stringify(project));
+        }
+        return;
+    }
+
+    // Update in Firebase
     const projectRef = ref(database, `${PROJECTS_PATH}/${projectId}`);
     await update(projectRef, {
         title: newTitle,
@@ -186,10 +262,28 @@ export const duplicateProject = async (
     userId: string,
     originalProject: Project
 ): Promise<string> => {
+    const newTitle = `Copy of ${originalProject.title || "Untitled Project"}`;
+
+    // Check if this is a local project
+    if (originalProject.id.startsWith("local-")) {
+        // Create a new local project
+        const newId = `local-${Date.now()}`;
+        const newProject: Project = {
+            id: newId,
+            title: newTitle,
+            html: originalProject.html,
+            css: originalProject.css,
+            js: originalProject.js,
+            ownerId: "local",
+            updatedAt: Date.now()
+        };
+        localStorage.setItem(`project-${newId}`, JSON.stringify(newProject));
+        return newId;
+    }
+
+    // Duplicate in Firebase
     const projectsRef = ref(database, PROJECTS_PATH);
     const newProjectRef = push(projectsRef);
-
-    const newTitle = `Copy of ${originalProject.title || "Untitled Project"}`;
 
     await set(newProjectRef, {
         title: newTitle,
