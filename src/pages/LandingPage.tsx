@@ -4,6 +4,7 @@ import { Code2, Zap, Cloud, Users, ArrowRight, Github } from "lucide-react";
 import { useEffect } from "react";
 import { motion } from "framer-motion";
 import ideScreenshot from "../assets/ide-screenshot.png";
+import { generateLocalId } from "../utils/idGenerator";
 
 function LandingPage() {
     const { user, logInWithGithub, loading } = useAuth();
@@ -16,13 +17,44 @@ function LandingPage() {
         }
     }, [user, loading, navigate]);
 
-    const handleGetStarted = async () => {
+
+    // Handler for "Sign in" button - only triggers authentication
+    const handleSignIn = async () => {
         try {
             await logInWithGithub();
         } catch (error) {
             console.error("Login failed:", error);
         }
     };
+
+    // Handler for "Launch Editor" button - creates guest project or redirects to dashboard
+    const handleLaunchEditor = async () => {
+        // If user is not logged in, create a guest project
+        if (!user) {
+            const localId = generateLocalId();
+
+            // Create a default empty project in localStorage
+            const defaultProject = {
+                id: localId,
+                name: "Untitled Project",
+                html: "<!DOCTYPE html>\n<html>\n<head>\n  <title>My Project</title>\n</head>\n<body>\n  <h1>Hello World!</h1>\n</body>\n</html>",
+                css: "body {\n  font-family: Arial, sans-serif;\n  margin: 0;\n  padding: 20px;\n}",
+                js: "console.log('Welcome to CodeSplit!');",
+                createdAt: Date.now(),
+                updatedAt: Date.now()
+            };
+
+            localStorage.setItem(`project-${localId}`, JSON.stringify(defaultProject));
+
+            // Navigate to editor with the local ID
+            navigate(`/editor/${localId}`);
+            return;
+        }
+
+        // If user is already logged in, redirect to dashboard
+        navigate("/dashboard");
+    };
+
 
     return (
         <div className="min-h-screen bg-slate-900 text-slate-100 overflow-x-hidden selection:bg-blue-500/30">
@@ -36,7 +68,7 @@ function LandingPage() {
                         <span className="text-xl font-bold tracking-tight">CodeSplit</span>
                     </Link>
                     <button
-                        onClick={handleGetStarted}
+                        onClick={handleSignIn}
                         disabled={loading}
                         className="px-4 py-2 text-sm font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/50 rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 hover:border-slate-600 hover:text-white"
                     >
@@ -97,7 +129,7 @@ function LandingPage() {
                         className="flex flex-col sm:flex-row items-center gap-4 mb-20"
                     >
                         <button
-                            onClick={handleGetStarted}
+                            onClick={handleLaunchEditor}
                             disabled={loading}
                             className="group relative inline-flex items-center gap-2 px-8 py-4 text-lg font-bold text-white bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-0.5 transition-all disabled:opacity-50 overflow-hidden"
                         >
