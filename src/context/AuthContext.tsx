@@ -13,8 +13,11 @@ import {
     onAuthStateChanged
 } from "firebase/auth";
 import type { User } from "firebase/auth";
+import { useNavigate, useLocation } from "react-router-dom";
 import { auth } from "../config/firebase";
 import { ensureUserProfile } from "../services/userService";
+import { migrateLocalProjects } from "../services/migrationService";
+import { useToast } from "./ToastContext";
 
 // Define the shape of our auth context
 interface AuthContextType {
@@ -37,6 +40,9 @@ export const UserAuthContextProvider = ({ children }: UserAuthContextProviderPro
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
     const profileSyncedRef = useRef<string | null>(null);
+    const navigate = useNavigate();
+    const location = useLocation();
+    const { showToast } = useToast();
 
     // Login with GitHub using popup
     const logInWithGithub = async (): Promise<void> => {
@@ -59,14 +65,40 @@ export const UserAuthContextProvider = ({ children }: UserAuthContextProviderPro
             // Only sync once per session per user to prevent infinite loops
             if (currentUser && profileSyncedRef.current !== currentUser.uid) {
                 profileSyncedRef.current = currentUser.uid;
+
+                // Capture current location at time of login
+                const currentPath = location.pathname;
+
                 try {
                     await ensureUserProfile(currentUser.uid, {
                         displayName: currentUser.displayName,
                         email: currentUser.email,
                         photoURL: currentUser.photoURL
                     });
+
+                    // Migrate local projects to cloud
+                    const migrationResult = await migrateLocalProjects(currentUser.uid);
+
+                    if (migrationResult.migratedCount > 0) {
+                        // Show success toast
+                        showToast(`Sync complete! ${migrationResult.migratedCount} local project${migrationResult.migratedCount > 1 ? 's' : ''} now in the cloud.`);
+
+                        // Smart redirect: If user is currently editing a local project, redirect to the migrated version
+                        const editorMatch = currentPath.match(/^\/editor\/(.+)$/);
+
+                        if (editorMatch) {
+                            const currentProjectId = editorMatch[1];
+
+                            // Check if this local project was just migrated
+                            if (currentProjectId.startsWith("local-") && migrationResult.newIdMap[currentProjectId]) {
+                                const newCloudId = migrationResult.newIdMap[currentProjectId];
+                                console.log(`Redirecting from ${currentProjectId} to ${newCloudId}`);
+                                navigate(`/editor/${newCloudId}`, { replace: true });
+                            }
+                        }
+                    }
                 } catch (error) {
-                    console.error("Failed to ensure user profile:", error);
+                    console.error("Failed to ensure user profile or migrate projects:", error);
                 }
             }
 
@@ -75,6 +107,7 @@ export const UserAuthContextProvider = ({ children }: UserAuthContextProviderPro
 
         // Cleanup subscription on unmount
         return () => unsubscribe();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const value: AuthContextType = {
