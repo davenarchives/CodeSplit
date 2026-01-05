@@ -6,19 +6,19 @@ import * as prettierBabel from "prettier/plugins/babel";
 import * as prettierEstree from "prettier/plugins/estree";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
-import LZString from "lz-string";
 
 import CodeEditor from "../CodeEditor/CodeEditor";
 import Preview from "../Preview/Preview";
 import TabBar from "../TabBar/TabBar";
 import ConsoleDrawer from "../ConsoleDrawer/ConsoleDrawer";
 import SettingsModal, { CDN_LIBRARIES } from "../SettingsModal/SettingsModal";
-import Toast from "../Toast/Toast";
 import type { CdnSettings, EditorSettings } from "../SettingsModal/SettingsModal";
 import type { LogEntry, LogLevel } from "../ConsoleDrawer/ConsoleDrawer";
 import useDebounce from "../../hooks/useDebounce";
 import useLocalStorage from "../../hooks/useLocalStorage";
 import { useResizable } from "../../hooks/useResizable";
+import { createShortLink } from "../../services/shortLinkService";
+import { useToast } from "../../context/ToastContext";
 
 interface FileState {
     id: string;
@@ -149,33 +149,14 @@ const MainContent = forwardRef<MainContentRef, MainContentProps>(({ isZenMode = 
     const [isConsoleOpen, setIsConsoleOpen] = useState(true);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isFormatting, setIsFormatting] = useState(false);
-    const [toastMessage, setToastMessage] = useState("");
-    const [showToast, setShowToast] = useState(false);
+    const { showToast } = useToast();
     const [isPreviewVisible, setIsPreviewVisible] = useState(true);
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
     // Track if initial load is complete to avoid triggering onCodeChange on mount
     const isInitialLoad = useRef(true);
 
-    // Load from URL on mount
     useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const codeParam = params.get("code");
-        if (codeParam) {
-            try {
-                const decompressed = LZString.decompressFromEncodedURIComponent(codeParam);
-                if (decompressed) {
-                    const parsed = JSON.parse(decompressed);
-                    if (Array.isArray(parsed) && parsed.length > 0) {
-                        setFiles(parsed);
-                        // Clear the URL parameter after loading
-                        window.history.replaceState({}, "", window.location.pathname);
-                    }
-                }
-            } catch (e) {
-                console.error("Failed to load code from URL:", e);
-            }
-        }
         // Mark initial load as complete after a short delay
         const timer = setTimeout(() => {
             isInitialLoad.current = false;
@@ -521,19 +502,20 @@ const MainContent = forwardRef<MainContentRef, MainContentProps>(({ isZenMode = 
         saveAs(blob, "index.html");
     }, [files, cdnSettings]);
 
-    // Share code via URL
-    const handleShare = useCallback(() => {
-        const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(files));
-        const shareUrl = `${window.location.origin}${window.location.pathname}?code=${compressed}`;
+    const handleShare = useCallback(async () => {
+        try {
+            // Create a short link in Firebase Realtime Database
+            const shortId = await createShortLink(files);
+            // Updated format: /editor/ID instead of ?s=ID
+            const shareUrl = `${window.location.origin}/editor/${shortId}`;
 
-        navigator.clipboard.writeText(shareUrl).then(() => {
-            setToastMessage("Link copied to clipboard!");
-            setShowToast(true);
-        }).catch(() => {
-            // Fallback: show URL in prompt
-            prompt("Copy this link:", shareUrl);
-        });
-    }, [files]);
+            await navigator.clipboard.writeText(shareUrl);
+            showToast("Short link copied to clipboard! 🚀");
+        } catch (error) {
+            console.error("Failed to create short link:", error);
+            showToast("Failed to create short link. Please check your connection.");
+        }
+    }, [files, showToast]);
 
     // Expose methods to parent via ref
     useImperativeHandle(ref, () => ({
@@ -666,13 +648,6 @@ const MainContent = forwardRef<MainContentRef, MainContentProps>(({ isZenMode = 
                     setCdnSettings(cdn);
                     setEditorSettings(editor);
                 }}
-            />
-
-            {/* Toast Notification */}
-            <Toast
-                message={toastMessage}
-                isVisible={showToast}
-                onClose={() => setShowToast(false)}
             />
         </>
     );
