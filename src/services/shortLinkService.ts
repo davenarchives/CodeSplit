@@ -2,13 +2,9 @@ import { ref, set, get, child, push } from "firebase/database";
 import { database } from "../config/firebase";
 
 
+import type { ProjectFile, ShortLinkData } from "../types/project";
 
-export interface ShortLinkData {
-    files: any[];
-    createdAt: number;
-}
-
-export const createShortLink = async (files: any[]): Promise<string> => {
+export const createShortLink = async (files: ProjectFile[]): Promise<string> => {
     try {
         const linksRef = ref(database, 'shortLinks');
         const newLinkRef = push(linksRef);
